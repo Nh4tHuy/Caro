@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Caro Glass 40x40</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        /* Tối ưu cuộn mượt cho mobile */
+        .scroll-container {
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        .scroll-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Hiệu ứng hiển thị quân cờ */
+        @keyframes popIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            60% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .marker-anim {
+            animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* Lưới bàn cờ 40x40 */
+        .board-grid {
+            background-color: #cbd5e1; 
+            gap: 1px;
+            padding: 1px;
+            grid-template-columns: repeat(40, 30px);
+        }
+        .board-cell {
+            width: 30px;
+            height: 30px;
+            background-color: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        
+        @media (hover: hover) {
+            .board-cell:hover { background-color: #f1f5f9; }
+        }
+
+        /* Hiệu ứng thắng */
+        @keyframes pulseWin {
+            0% { background-color: rgba(34, 197, 94, 0.3); transform: scale(1); }
+            50% { background-color: rgba(34, 197, 94, 0.7); transform: scale(1.05); }
+            100% { background-color: rgba(34, 197, 94, 0.3); transform: scale(1); }
+        }
+        .win-cell {
+            animation: pulseWin 1s infinite;
+            z-index: 10;
+        }
+
+        /* Nền Glassmorphism tổng thể */
+        body {
+            background: linear-gradient(135deg, #e0f2fe 0%, #bfdbfe 100%);
+        }
+    </style>
+</head>
+<body class="text-slate-800 h-screen w-screen overflow-hidden flex flex-col font-sans select-none">
+
+    <!-- ================= MÀN HÌNH MENU CHÍNH ================= -->
+    <div id="screen-menu" class="absolute inset-0 z-50 flex flex-col items-center justify-center p-4 transition-opacity duration-300">
+        <div class="bg-white/60 backdrop-blur-xl border border-white/50 p-8 rounded-3xl shadow-2xl w-full max-w-md text-center">
+            <div class="w-20 h-20 bg-blue-500 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg transform rotate-3">
+                <i class="fa-solid fa-border-all text-4xl text-white"></i>
+            </div>
+            <h1 class="text-3xl font-black text-slate-800 mb-2">Caro 40x40</h1>
+            <p class="text-slate-500 mb-8 font-medium">Bản đồ khổng lồ - Hiệu suất cao</p>
+
+            <div class="space-y-4">
+                <button onclick="startGame('offline')" class="w-full py-4 bg-white/80 hover:bg-white text-blue-600 font-bold rounded-2xl shadow-sm border border-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-user-group"></i> Chơi 2 người (Offline)
+                </button>
+                
+                <div class="relative flex items-center py-2">
+                    <div class="flex-grow border-t border-slate-300/50"></div>
+                    <span class="flex-shrink-0 mx-4 text-slate-400 text-sm">Hoặc Online</span>
+                    <div class="flex-grow border-t border-slate-300/50"></div>
+                </div>
+
+                <button onclick="createRoom()" class="w-full py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2" id="btn-create">
+                    <i class="fa-solid fa-plus"></i> Tạo Phòng Mới
+                </button>
+                
+                <div class="flex gap-2">
+                    <input type="text" id="join-code" placeholder="Mã phòng..." class="flex-1 bg-white/50 border border-white/50 rounded-2xl px-4 text-center font-mono uppercase text-lg outline-none focus:ring-2 focus:ring-blue-400">
+                    <button onclick="joinRoom()" class="w-14 h-14 bg-slate-700 hover:bg-slate-800 text-white rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center" id="btn-join">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="auth-status" class="mt-6 text-sm font-medium text-slate-500 bg-white/40 px-4 py-2 rounded-full backdrop-blur-md">
+            <i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Đang khởi tạo...
+        </div>
+    </div>
+
+    <!-- ================= MÀN HÌNH CHƠI GAME ================= -->
+    <div id="screen-game" class="absolute inset-0 z-10 flex flex-col hidden bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjIiIGZpbGw9InJnYmEoMCwwLDAsMC4wMykiLz48L3N2Zz4=')]">
+        
+        <!-- THANH TOP (Player X - Chủ phòng / P1) -->
+        <div class="h-16 sm:h-20 bg-blue-500/90 backdrop-blur-md border-b border-white/20 px-4 flex items-center justify-between shadow-sm shrink-0 z-20">
+            <div class="flex items-center gap-3">
+                <button onclick="confirmExit()" class="w-8 h-8 flex items-center justify-center text-white/80 hover:text-white bg-black/10 rounded-full transition">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <!-- Avatar X -->
+                <div class="w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-full p-0.5 shadow-sm relative flex items-center justify-center">
+                    <div class="w-full h-full rounded-full bg-blue-100 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"></line><line x1="19" y1="5" x2="5" y2="19"></line></svg>
+                    </div>
+                </div>
+                <div class="flex flex-col text-white">
+                    <span id="name-x" class="font-bold text-sm sm:text-base drop-shadow-sm">Người chơi 1</span>
+                    <div class="flex items-center gap-2">
+                        <span id="status-x" class="text-xs px-2 py-0.5 bg-green-400/90 text-green-900 rounded-md font-bold shadow-sm hidden transition-all">Đến lượt</span>
+                        <span id="room-code-display" class="text-xs font-mono bg-black/20 px-2 py-0.5 rounded cursor-pointer hover:bg-black/30 hidden" onclick="copyCode()" title="Bấm để copy">MÃ: </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3 text-white">
+                <div class="flex flex-col items-end hidden sm:flex">
+                    <span class="text-xs text-blue-100 uppercase tracking-wider font-bold">Số bước</span>
+                    <span id="moves-x" class="font-bold font-mono text-xl leading-none">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- BÀN CỜ (Khu vực cuộn 40x40) -->
+        <div id="board-wrapper" class="flex-1 w-full overflow-auto scroll-container flex items-center justify-center p-2 sm:p-4 bg-slate-900/5">
+            <div id="board-loading" class="absolute flex flex-col items-center justify-center text-blue-500 hidden z-50">
+                <i class="fa-solid fa-circle-notch fa-spin text-4xl mb-2"></i>
+                <span class="font-bold text-sm bg-white/80 px-3 py-1 rounded-full mt-2 backdrop-blur-sm">Đang tạo bàn cờ...</span>
+            </div>
+            
+            <div id="board-container" class="relative shadow-[0_10px_40px_-15px_rgba(0,0,0,0.3)] rounded-sm overflow-hidden bg-white/60 backdrop-blur-sm p-1 border border-white/60 opacity-0 transition-opacity duration-300">
+                <div id="game-board" class="grid board-grid"></div>
+            </div>
+        </div>
+
+        <!-- THANH BOTTOM (Player O - Khách / P2) -->
+        <div class="h-16 sm:h-20 bg-white/90 backdrop-blur-md border-t border-white px-4 flex items-center justify-between shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0 z-20">
+            <div class="flex items-center gap-3 text-slate-700">
+                <div class="flex flex-col items-start hidden sm:flex">
+                    <span class="text-xs text-slate-400 uppercase tracking-wider font-bold">Số bước</span>
+                    <span id="moves-o" class="font-bold font-mono text-xl leading-none text-red-500">0</span>
+                </div>
+                <button onclick="centerBoard()" class="w-10 h-10 flex items-center justify-center text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl transition shadow-sm" title="Giữa bàn cờ">
+                    <i class="fa-solid fa-crosshairs"></i>
+                </button>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <div class="flex flex-col text-right">
+                    <span id="name-o" class="font-bold text-sm sm:text-base text-slate-800">Người chơi 2</span>
+                    <span id="status-o" class="text-xs px-2 py-0.5 bg-green-500 text-white rounded-md font-bold shadow-sm inline-block ml-auto hidden transition-all">Đến lượt</span>
+                    <span id="status-wait-o" class="text-xs text-slate-400 font-medium italic hidden">Đang đợi tham gia...</span>
+                </div>
+                <!-- Avatar O -->
+                <div class="w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-full p-0.5 shadow-md border border-slate-200 relative flex items-center justify-center">
+                    <div class="w-full h-full rounded-full bg-red-100 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><circle cx="12" cy="12" r="8"></circle></svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MODAL THÔNG BÁO / KẾT QUẢ -->
+    <div id="modal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300 p-4">
+        <div class="bg-white/95 backdrop-blur-xl border border-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center transform scale-95 transition-transform duration-300" id="modal-content">
+            <div id="modal-icon" class="text-6xl mb-4 drop-shadow-md">🏆</div>
+            <h2 id="modal-title" class="text-2xl font-black text-slate-800 mb-2">Tiêu đề</h2>
+            <p id="modal-desc" class="text-slate-500 mb-8 font-medium">Nội dung thông báo</p>
+            
+            <div class="flex gap-3 justify-center">
+                <button id="btn-modal-cancel" onclick="hideModal()" class="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition hidden">Hủy</button>
+                <button id="btn-modal-ok" onclick="handleModalOk()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transition">Đồng ý</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" class="fixed top-20 right-4 bg-slate-800/95 backdrop-blur text-white px-5 py-3 rounded-xl shadow-xl z-50 transform transition-all duration-300 translate-y-[-20px] opacity-0 pointer-events-none text-sm font-medium border border-slate-700 flex items-center gap-2">
+        <i class="fa-solid fa-bell text-blue-400"></i>
+        <span id="toast-text">Thông báo</span>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        let app, auth, db, user;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-caro-game-app';
+
+        // Khởi tạo an toàn Firebase
+        const initFirebaseSecurely = () => {
+            try {
+                let firebaseConfig = null;
+
+                // TH1: Chạy trong môi trường đã được cấp sẵn Config (Canvas AI)
+                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    firebaseConfig = JSON.parse(__firebase_config);
+                } 
+                // TH2: Chạy ở máy tính/host cá nhân (Điền key của bạn vào đây)
+                else {
+                    firebaseConfig = {
+                        apiKey: "AIzaSyBwSNpLu5liMKbkYtaA_YMRQxEup_BrLeQ",
+  authDomain: "caro-online-3056e.firebaseapp.com",
+  projectId: "caro-online-3056e",
+  storageBucket: "caro-online-3056e.firebasestorage.app",
+  messagingSenderId: "490204158312",
+  appId: "1:490204158312:web:1cb84bb4184a2d22d81edd"
+                    };
+                }
+
+                // Kiểm tra xem config có thật sự tồn tại không
+                if (!firebaseConfig || !firebaseConfig.apiKey) {
+                    throw new Error("Chưa có Key Cấu hình Firebase");
+                }
+
+                // Tiến hành kết nối
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                
+                const handleAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+                handleAuth();
+
+                onAuthStateChanged(auth, (u) => {
+                    user = u;
+                    document.getElementById('auth-status').innerHTML = u 
+                        ? `<i class="fa-solid fa-check text-green-500 mr-1"></i> Đã kết nối máy chủ` 
+                        : `<i class="fa-solid fa-xmark text-red-500 mr-1"></i> Lỗi đăng nhập`;
+                });
+
+            } catch (e) {
+                console.warn("Chế độ Online đang tắt: " + e.message);
+                document.getElementById('auth-status').innerHTML = `<i class="fa-solid fa-gamepad text-blue-500 mr-1"></i> Chế độ Offline khả dụng`;
+                db = null; // Đánh dấu là không có database
+            }
+        };
+
+        // Chạy khởi tạo
+        initFirebaseSecurely();
+
+        // --- GLOBAL STATE ---
+        const SIZE = 40;
+        const TOTAL_CELLS = SIZE * SIZE;
+        
+        let state = {
+            mode: 'offline', 
+            roomId: null,
+            isHost: true,
+            board: Array(TOTAL_CELLS).fill(null),
+            turn: 'X',
+            status: 'waiting',
+            winner: null,
+            winningLine: [],
+            movesX: 0,
+            movesO: 0,
+            lastMove: null,
+            unsubscribe: null,
+            boardRendered: false
+        };
+
+        // --- DOM ELEMENTS ---
+        const screenMenu = document.getElementById('screen-menu');
+        const screenGame = document.getElementById('screen-game');
+        const boardEl = document.getElementById('game-board');
+        const boardContainer = document.getElementById('board-container');
+        const boardLoading = document.getElementById('board-loading');
+        
+        // --- UI HELPERS ---
+        window.showToast = (msg) => {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-text').innerText = msg;
+            toast.classList.remove('translate-y-[-20px]', 'opacity-0');
+            setTimeout(() => toast.classList.add('translate-y-[-20px]', 'opacity-0'), 2500);
+        };
+
+        let modalCallback = null;
+        const showModal = (title, desc, icon, showCancel = false, onOk = null, okText = "Đồng ý") => {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-desc').innerText = desc;
+            document.getElementById('modal-icon').innerHTML = icon;
+            document.getElementById('btn-modal-cancel').style.display = showCancel ? 'block' : 'none';
+            document.getElementById('btn-modal-ok').innerText = okText;
+            modalCallback = onOk;
+            
+            const modal = document.getElementById('modal');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                document.getElementById('modal-content').classList.remove('scale-95');
+            }, 10);
+        };
+
+        window.hideModal = () => {
+            const modal = document.getElementById('modal');
+            modal.classList.add('opacity-0');
+            document.getElementById('modal-content').classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+            modalCallback = null;
+        };
+
+        window.handleModalOk = () => {
+            if (modalCallback) modalCallback();
+            else hideModal();
+        };
+
+        // --- OPTIMIZED BOARD RENDER ---
+        function renderBoardOptimized() {
+            if (state.boardRendered) {
+                clearBoardUI();
+                return Promise.resolve();
+            }
+
+            return new Promise((resolve) => {
+                boardLoading.classList.remove('hidden');
+                boardContainer.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    const fragment = document.createDocumentFragment();
+                    const cellTemplate = document.createElement('div');
+                    cellTemplate.className = 'board-cell';
+                    
+                    for (let i = 0; i < TOTAL_CELLS; i++) {
+                        const cell = cellTemplate.cloneNode();
+                        cell.id = `c-${i}`;
+                        cell.onclick = () => handleMove(i);
+                        fragment.appendChild(cell);
+                    }
+                    
+                    boardEl.innerHTML = '';
+                    boardEl.appendChild(fragment);
+                    state.boardRendered = true;
+                    
+                    boardLoading.classList.add('hidden');
+                    boardContainer.classList.remove('opacity-0');
+                    centerBoard();
+                    resolve();
+                }, 50);
+            });
+        }
+        
+        function clearBoardUI() {
+            const cells = boardEl.children;
+            for (let i = 0; i < cells.length; i++) {
+                cells[i].innerHTML = '';
+                cells[i].className = 'board-cell'; 
+            }
+            centerBoard();
+        }
+
+        window.centerBoard = () => {
+            const wrapper = document.getElementById('board-wrapper');
+            wrapper.scrollTop = (wrapper.scrollHeight - wrapper.clientHeight) / 2;
+            wrapper.scrollLeft = (wrapper.scrollWidth - wrapper.clientWidth) / 2;
+        };
+
+        function updateCell(index, marker, animate = true) {
+            const cell = document.getElementById(`c-${index}`);
+            if (!cell) return;
+            
+            const prev = document.querySelector('.bg-yellow-200');
+            if (prev) prev.classList.remove('bg-yellow-200');
+
+            if (marker) {
+                const isX = marker === 'X';
+                const iconHtml = isX 
+                    ? `<svg class="w-[22px] h-[22px] text-blue-500 ${animate ? 'marker-anim' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"></line><line x1="19" y1="5" x2="5" y2="19"></line></svg>` 
+                    : `<svg class="w-[22px] h-[22px] text-red-500 ${animate ? 'marker-anim' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><circle cx="12" cy="12" r="8"></circle></svg>`;
+                
+                cell.innerHTML = iconHtml;
+                cell.classList.add('bg-yellow-200'); 
+            } else {
+                cell.innerHTML = '';
+            }
+        }
+
+        function updateUI() {
+            const nameX = document.getElementById('name-x');
+            const nameO = document.getElementById('name-o');
+            const codeDisplay = document.getElementById('room-code-display');
+            
+            if (state.mode === 'offline') {
+                nameX.innerText = "Xanh (X)";
+                nameO.innerText = "Đỏ (O)";
+                codeDisplay.classList.add('hidden');
+                document.getElementById('status-wait-o').classList.add('hidden');
+            } else {
+                nameX.innerText = state.isHost ? "Bạn (X)" : "Chủ phòng (X)";
+                nameO.innerText = !state.isHost ? "Bạn (O)" : "Khách (O)";
+                
+                if (state.roomId) {
+                    codeDisplay.innerText = `MÃ: ${state.roomId}`;
+                    codeDisplay.classList.remove('hidden');
+                }
+                
+                if (state.status === 'waiting') {
+                    document.getElementById('status-wait-o').classList.remove('hidden');
+                    document.getElementById('status-o').classList.add('hidden');
+                } else {
+                    document.getElementById('status-wait-o').classList.add('hidden');
+                }
+            }
+
+            const statusX = document.getElementById('status-x');
+            const statusO = document.getElementById('status-o');
+            
+            if (state.status === 'playing') {
+                if (state.turn === 'X') {
+                    statusX.classList.remove('hidden');
+                    statusO.classList.add('hidden');
+                } else {
+                    statusX.classList.add('hidden');
+                    statusO.classList.remove('hidden');
+                }
+            } else {
+                statusX.classList.add('hidden');
+                statusO.classList.add('hidden');
+            }
+
+            document.getElementById('moves-x').innerText = state.movesX;
+            document.getElementById('moves-o').innerText = state.movesO;
+        }
+
+        // --- GAMEPLAY LOGIC ---
+        window.startGame = async (mode) => {
+            state.mode = mode;
+            state.board = Array(TOTAL_CELLS).fill(null);
+            state.turn = 'X';
+            state.status = mode === 'offline' ? 'playing' : 'waiting';
+            state.winner = null;
+            state.winningLine = [];
+            state.movesX = 0;
+            state.movesO = 0;
+            state.lastMove = null;
+
+            screenMenu.classList.add('opacity-0', 'pointer-events-none');
+            
+            setTimeout(async () => {
+                screenMenu.classList.add('hidden');
+                screenGame.classList.remove('hidden');
+                await renderBoardOptimized(); 
+                updateUI();
+            }, 300);
+        };
+
+        window.confirmExit = () => {
+            showModal("Thoát trận", "Bạn có chắc muốn thoát ra Menu chính?", "🚪", true, () => {
+                if (state.unsubscribe) state.unsubscribe();
+                
+                if (state.mode === 'online' && !state.isHost && state.roomId && user && db) {
+                    updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'caro_rooms', state.roomId), { peerId: null }).catch(()=>{});
+                }
+                
+                hideModal();
+                screenGame.classList.add('hidden');
+                screenMenu.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+                state.roomId = null;
+            });
+        };
+
+        window.handleMove = async (index) => {
+            if (state.status !== 'playing') return;
+            if (state.board[index] !== null) return;
+            
+            const myMarker = (state.mode === 'offline') ? state.turn : (state.isHost ? 'X' : 'O');
+            
+            if (state.mode === 'online' && state.turn !== myMarker) {
+                showToast("Đang chờ đối thủ đánh...");
+                return;
+            }
+
+            state.board[index] = myMarker;
+            state.lastMove = index;
+            if (myMarker === 'X') state.movesX++; else state.movesO++;
+            
+            updateCell(index, myMarker, true);
+            
+            const winLine = checkWin(index, myMarker);
+            const nextTurn = myMarker === 'X' ? 'O' : 'X';
+            
+            if (state.mode === 'offline') {
+                if (winLine) endGame(myMarker, winLine);
+                else {
+                    state.turn = nextTurn;
+                    updateUI();
+                }
+            } else {
+                let updates = {
+                    board: state.board,
+                    lastMove: index,
+                    turn: nextTurn,
+                    movesX: state.movesX,
+                    movesO: state.movesO
+                };
+                
+                if (winLine) {
+                    updates.status = 'finished';
+                    updates.winner = myMarker;
+                    updates.winningLine = winLine;
+                }
+                
+                state.turn = nextTurn;
+                updateUI();
+                
+                if(db) {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'caro_rooms', state.roomId);
+                    await updateDoc(ref, updates);
+                }
+            }
+        };
+
+        function checkWin(index, marker) {
+            const r = Math.floor(index / SIZE);
+            const c = index % SIZE;
+            const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]]; 
+
+            for (let [dr, dc] of dirs) {
+                let count = 1;
+                let line = [index];
+
+                for (let i = 1; i < 5; i++) {
+                    let nr = r + dr * i, nc = c + dc * i;
+                    if (nr>=0 && nr<SIZE && nc>=0 && nc<SIZE && state.board[nr*SIZE+nc] === marker) {
+                        count++; line.push(nr*SIZE+nc);
+                    } else break;
+                }
+                for (let i = 1; i < 5; i++) {
+                    let nr = r - dr * i, nc = c - dc * i;
+                    if (nr>=0 && nr<SIZE && nc>=0 && nc<SIZE && state.board[nr*SIZE+nc] === marker) {
+                        count++; line.push(nr*SIZE+nc);
+                    } else break;
+                }
+                if (count >= 5) return line;
+            }
+            return null;
+        }
+
+        function endGame(winner, line) {
+            state.status = 'finished';
+            
+            line.forEach(idx => {
+                document.getElementById(`c-${idx}`).classList.add('win-cell');
+            });
+
+            setTimeout(() => {
+                let msg = "";
+                let iconStr = winner === 'X' ? 
+                    '<div class="w-20 h-20 bg-blue-100 rounded-full mx-auto flex items-center justify-center"><svg class="w-10 h-10 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"></line><line x1="19" y1="5" x2="5" y2="19"></line></svg></div>' : 
+                    '<div class="w-20 h-20 bg-red-100 rounded-full mx-auto flex items-center justify-center"><svg class="w-10 h-10 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><circle cx="12" cy="12" r="8"></circle></svg></div>';
+
+                if (state.mode === 'offline') {
+                    msg = `Người chơi ${winner === 'X' ? 'Xanh' : 'Đỏ'} đã thắng!`;
+                } else {
+                    const iWon = (winner === 'X' && state.isHost) || (winner === 'O' && !state.isHost);
+                    msg = iWon ? "Tuyệt vời! Bạn đã chiến thắng." : "Rất tiếc! Bạn đã thua.";
+                    if(!iWon) iconStr = '💔';
+                }
+
+                showModal(
+                    "Trận đấu kết thúc", 
+                    msg, 
+                    iconStr,
+                    false,
+                    () => {
+                        hideModal();
+                        if (state.mode === 'offline' || (state.mode === 'online' && state.isHost)) {
+                            resetBoardRequest();
+                        } else {
+                            showToast("Chờ chủ phòng tạo ván mới...");
+                        }
+                    },
+                    (state.mode === 'online' && !state.isHost) ? "Đóng" : "Chơi ván mới"
+                );
+            }, 800);
+        }
+
+        async function resetBoardRequest() {
+            if (state.mode === 'offline') {
+                startGame('offline');
+            } else if (state.mode === 'online' && state.isHost && db) {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'caro_rooms', state.roomId);
+                await updateDoc(ref, {
+                    status: 'playing',
+                    board: Array(TOTAL_CELLS).fill(null),
+                    turn: 'X',
+                    winner: null,
+                    winningLine: [],
+                    lastMove: null,
+                    movesX: 0,
+                    movesO: 0
+                });
+            }
+        }
+
+        // --- ONLINE MULTIPLAYER LOGIC ---
+        const genCode = () => Math.random().toString(36).substring(2, 7).toUpperCase();
+
+        window.createRoom = async () => {
+            // Bảo vệ luồng khi Firebase chưa được kết nối
+            if (!db || !user) {
+                return showToast("Bạn chưa điền cấu hình Firebase để chơi Online.");
+            }
+            
+            const btn = document.getElementById('btn-create');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tạo...';
+            btn.disabled = true;
+
+            state.roomId = genCode();
+            state.isHost = true;
+            
+            try {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'caro_rooms', state.roomId);
+                await setDoc(ref, {
+                    hostId: user.uid,
+                    peerId: null,
+                    status: 'waiting',
+                    board: Array(TOTAL_CELLS).fill(null),
+                    turn: 'X',
+                    winner: null,
+                    winningLine: [],
+                    lastMove: null,
+                    movesX: 0,
+                    movesO: 0,
+                    createdAt: new Date().toISOString()
+                });
+
+                startGame('online');
+                listenRoom(ref);
+            } catch (e) {
+                showToast("Lỗi tạo phòng: Kiểm tra lại quyền Firestore");
+            } finally {
+                btn.innerHTML = '<i class="fa-solid fa-plus"></i> Tạo Phòng Mới';
+                btn.disabled = false;
+            }
+        };
+
+        window.joinRoom = async () => {
+            // Bảo vệ luồng khi Firebase chưa được kết nối
+            if (!db || !user) {
+                return showToast("Bạn chưa điền cấu hình Firebase để chơi Online.");
+            }
+            
+            const code = document.getElementById('join-code').value.toUpperCase().trim();
+            if (!code) return showToast("Vui lòng nhập mã");
+
+            const btn = document.getElementById('btn-join');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+
+            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'caro_rooms', code);
+            try {
+                const snap = await getDoc(ref);
+                
+                if (snap.exists()) {
+                    const data = snap.data();
+                    if (data.peerId && data.peerId !== user.uid && data.hostId !== user.uid) {
+                        showToast("Phòng đã đủ người");
+                        return;
+                    }
+                    
+                    if (data.hostId !== user.uid) {
+                        await updateDoc(ref, { peerId: user.uid, status: 'playing' });
+                        state.isHost = false;
+                    } else {
+                        state.isHost = true;
+                    }
+
+                    state.roomId = code;
+                    startGame('online');
+                    listenRoom(ref);
+                } else {
+                    showToast("Mã phòng không đúng");
+                }
+            } catch(e) {
+                showToast("Lỗi tham gia phòng");
+            } finally {
+                btn.innerHTML = '<i class="fa-solid fa-arrow-right"></i>';
+                btn.disabled = false;
+            }
+        };
+
+        window.copyCode = () => {
+            if (state.roomId) {
+                navigator.clipboard.writeText(state.roomId);
+                showToast("Đã copy mã phòng!");
+            }
+        };
+
+        function listenRoom(ref) {
+            if (state.unsubscribe) state.unsubscribe();
+            
+            state.unsubscribe = onSnapshot(ref, (snap) => {
+                if (!snap.exists()) return confirmExit();
+                
+                const data = snap.data();
+                const oldStatus = state.status;
+                const oldLastMove = state.lastMove;
+                
+                state.status = data.status;
+                state.board = data.board;
+                state.turn = data.turn;
+                state.movesX = data.movesX;
+                state.movesO = data.movesO;
+                state.lastMove = data.lastMove;
+
+                if (oldStatus !== 'playing' && state.status === 'playing') {
+                    clearBoardUI(); 
+                } 
+                else if (state.status === 'playing' && state.lastMove !== null && state.lastMove !== oldLastMove) {
+                    updateCell(state.lastMove, state.board[state.lastMove], true); 
+                }
+
+                updateUI();
+
+                if (data.status === 'finished' && data.winner) {
+                    endGame(data.winner, data.winningLine);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
